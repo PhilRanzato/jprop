@@ -7,6 +7,10 @@ import (
 	"strconv"
 )
 
+type Marshaler interface {
+	MarshalProperties() (string, error)
+}
+
 func Marshal(v interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	err := marshalValue(reflect.ValueOf(v), &buf, "")

@@ -1,159 +1,159 @@
 package jprop
 
 import (
-	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
-func Unmarshal(data []byte, v interface{}) error {
-	val := reflect.ValueOf(v).Elem()
-	lines := parseProperties(string(data))
-	return unmarshalValue(lines, val, "")
+type Unmarshaler interface {
+	UnmarshalProperties(string) error
 }
 
-func unmarshalValue(lines map[string]string, val reflect.Value, prefix string) error {
-	val = reflect.Indirect(val)
-	switch val.Kind() {
-	case reflect.Struct:
-		typ := val.Type()
-		for i := 0; i < val.NumField(); i++ {
-			field := typ.Field(i)
-			fieldValue := val.Field(i)
-			tag := field.Tag.Get("jprop")
-			if tag == "-" {
-				continue
-			}
-			tagOptions := parseTagOptions(tag)
-			key := tagOptions.name
-			if key == "" {
-				key = field.Name
-			}
-			fullKey := prefix + key
-			if fieldValue.CanSet() {
-				if fieldValue.Kind() == reflect.Struct {
-					err := unmarshalValue(lines, fieldValue, fullKey+".")
-					if err != nil {
-						return err
-					}
-				} else {
-					lineValue, exists := lines[fullKey]
-					if !exists {
-						continue
-					}
-					err := setValueFromString(fieldValue, lineValue)
-					if err != nil {
-						return err
-					}
-				}
-			}
+func Unmarshal(data []byte, v interface{}) error {
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if len(line) == 0 || strings.HasPrefix(line, "#") {
+			continue
 		}
-	case reflect.Map:
-		val.Set(reflect.MakeMap(val.Type()))
-		for lineKey, lineValue := range lines {
-			if strings.HasPrefix(lineKey, prefix) {
-				keyPart := strings.TrimPrefix(lineKey, prefix)
-				keyParts := strings.SplitN(keyPart, ".", 2)
-				mapKey := reflect.New(val.Type().Key()).Elem()
-				err := setValueFromString(mapKey, keyParts[0])
-				if err != nil {
-					return err
-				}
-				mapValue := reflect.New(val.Type().Elem()).Elem()
-				if len(keyParts) > 1 {
-					err = unmarshalValue(lines, mapValue, prefix+keyParts[0]+".")
-					if err != nil {
-						return err
-					}
-				} else {
-					err = setValueFromString(mapValue, lineValue)
-					if err != nil {
-						return err
-					}
-				}
-				val.SetMapIndex(mapKey, mapValue)
-			}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid line: %s", line)
 		}
-	case reflect.Slice, reflect.Array:
-		var maxIndex int
-		indices := make(map[int]string)
-		for lineKey, lineValue := range lines {
-			if strings.HasPrefix(lineKey, prefix[:len(prefix)-1]) {
-				keyPart := strings.TrimPrefix(lineKey, prefix[:len(prefix)-1])
-				if strings.HasPrefix(keyPart, "[") {
-					idxStr := strings.SplitN(keyPart[1:], "]", 2)[0]
-					idx, err := strconv.Atoi(idxStr)
-					if err != nil {
-						return err
-					}
-					if idx > maxIndex {
-						maxIndex = idx
-					}
-					indices[idx] = lineValue
-				}
-			}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		err := setValueFromString(v, key, value)
+		if err != nil {
+			return err
 		}
-		sliceValue := reflect.MakeSlice(val.Type(), maxIndex+1, maxIndex+1)
-		for idx, strValue := range indices {
-			elemValue := sliceValue.Index(idx)
-			err := setValueFromString(elemValue, strValue)
-			if err != nil {
-				return err
-			}
-		}
-		val.Set(sliceValue)
-	default:
-		lineValue, exists := lines[prefix[:len(prefix)-1]]
-		if !exists {
-			return nil
-		}
-		return setValueFromString(val, lineValue)
 	}
 	return nil
 }
 
-func setValueFromString(v reflect.Value, s string) error {
-	if v.CanInterface() {
-		if um, ok := v.Addr().Interface().(Unmarshaler); ok {
-			return um.UnmarshalProperties(s)
+func setValueFromString(v interface{}, key, value string) error {
+	structValue := reflect.ValueOf(v).Elem()
+	structType := structValue.Type()
+
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		fieldValue := structValue.Field(i)
+
+		tag := field.Tag.Get("jprop")
+		tagOptions := parseTagOptions(tag)
+		propName := tagOptions.name
+		if propName == "" {
+			propName = field.Name
+		}
+
+		// Verifica se la chiave corrisponde al campo corrente
+		if strings.HasPrefix(key, propName) {
+			switch fieldValue.Kind() {
+			case reflect.String:
+				fieldValue.SetString(value)
+			case reflect.Bool:
+				boolValue, err := strconv.ParseBool(value)
+				if err != nil {
+					return fmt.Errorf("invalid boolean value for key %s: %s", key, value)
+				}
+				fieldValue.SetBool(boolValue)
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				intValue, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					return fmt.Errorf("invalid integer value for key %s: %s", key, value)
+				}
+				fieldValue.SetInt(intValue)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				uintValue, err := strconv.ParseUint(value, 10, 64)
+				if err != nil {
+					return fmt.Errorf("invalid unsigned integer value for key %s: %s", key, value)
+				}
+				fieldValue.SetUint(uintValue)
+			case reflect.Float32, reflect.Float64:
+				floatValue, err := strconv.ParseFloat(value, 64)
+				if err != nil {
+					return fmt.Errorf("invalid float value for key %s: %s", key, value)
+				}
+				fieldValue.SetFloat(floatValue)
+			case reflect.Slice:
+				elemType := fieldValue.Type().Elem()
+				values := strings.Split(value, ",")
+				slice := reflect.MakeSlice(fieldValue.Type(), len(values), len(values))
+				for i, v := range values {
+					elemValue := reflect.New(elemType).Elem()
+					if err := setBasicTypeFromString(v, elemValue); err != nil {
+						return err
+					}
+					slice.Index(i).Set(elemValue)
+				}
+				fieldValue.Set(slice)
+			case reflect.Map:
+				if fieldValue.Type().Key().Kind() != reflect.String {
+					return fmt.Errorf("unsupported map key type for key %s: %s", key, fieldValue.Type().Key())
+				}
+				if fieldValue.IsNil() {
+					fieldValue.Set(reflect.MakeMap(fieldValue.Type()))
+				}
+
+				mapKeyValue := strings.SplitN(key, ".", 2)
+				if len(mapKeyValue) < 2 {
+					return fmt.Errorf("invalid map key format for key %s", key)
+				}
+				mapKey := mapKeyValue[1]
+
+				mapKeyElem := reflect.New(fieldValue.Type().Key()).Elem()
+				if err := setBasicTypeFromString(mapKey, mapKeyElem); err != nil {
+					return err
+				}
+
+				mapValueElem := reflect.New(fieldValue.Type().Elem()).Elem()
+				if err := setBasicTypeFromString(value, mapValueElem); err != nil {
+					return err
+				}
+				fieldValue.SetMapIndex(mapKeyElem, mapValueElem)
+			default:
+				return fmt.Errorf("unsupported field type: %s", fieldValue.Type())
+			}
 		}
 	}
+
+	return nil
+}
+
+func setBasicTypeFromString(value string, v reflect.Value) error {
 	switch v.Kind() {
 	case reflect.String:
-		v.SetString(s)
+		v.SetString(value)
 	case reflect.Bool:
-		b, err := strconv.ParseBool(s)
+		boolValue, err := strconv.ParseBool(value)
 		if err != nil {
 			return err
 		}
-		v.SetBool(b)
+		v.SetBool(boolValue)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		i, err := strconv.ParseInt(s, 10, 64)
+		intValue, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return err
 		}
-		v.SetInt(i)
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		u, err := strconv.ParseUint(s, 10, 64)
+		v.SetInt(intValue)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		uintValue, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
 			return err
 		}
-		v.SetUint(u)
+		v.SetUint(uintValue)
 	case reflect.Float32, reflect.Float64:
-		f, err := strconv.ParseFloat(s, 64)
+		floatValue, err := strconv.ParseFloat(value, 64)
 		if err != nil {
 			return err
 		}
-		v.SetFloat(f)
-	case reflect.Complex64, reflect.Complex128:
-		c, err := strconv.ParseComplex(s, 128)
-		if err != nil {
-			return err
-		}
-		v.SetComplex(c)
+		v.SetFloat(floatValue)
 	default:
-		return errors.New("unsupported type in setValueFromString")
+		return fmt.Errorf("unsupported type: %s", v.Type())
 	}
 	return nil
 }
