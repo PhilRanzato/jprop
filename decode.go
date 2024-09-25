@@ -11,7 +11,7 @@ type Unmarshaler interface {
 	UnmarshalProperties(string) error
 }
 
-// Unmarshal carica i dati da un formato .properties in una struct
+// Unmarshal loads data from a .properties format into a struct
 func Unmarshal(data []byte, v interface{}) error {
 	lines := strings.Split(string(data), "\n")
 	val := reflect.ValueOf(v).Elem()
@@ -54,7 +54,7 @@ func setValueFromString(v reflect.Value, key, value string) error {
 					if fieldValue.Kind() == reflect.Struct {
 						return setValueFromString(fieldValue, subKey, value)
 					} else if fieldValue.Kind() == reflect.Slice {
-						// Gestisci slice
+						// Handle slices
 						items := strings.Split(value, ",")
 						slice := reflect.MakeSlice(fieldValue.Type(), len(items), len(items))
 						for idx, item := range items {
@@ -65,20 +65,20 @@ func setValueFromString(v reflect.Value, key, value string) error {
 						fieldValue.Set(slice)
 						return nil
 					} else if fieldValue.Kind() == reflect.Map {
-						// Gestisci mappe
-						mapKey := extractMapKey(subKey) // Prendi solo la chiave
+						// Handle maps
+						mapKey := extractMapKey(subKey) // Extract only the key
 						if mapKey != "" {
-							// Assicurati che la mappa sia inizializzata
+							// Ensure the map is initialized
 							if fieldValue.IsNil() {
 								fieldValue.Set(reflect.MakeMap(fieldValue.Type()))
 							}
-							// Creare o aggiornare la chiave nella mappa
+							// Set the value in the map
 							mapValue := fieldValue.MapIndex(reflect.ValueOf(mapKey))
 							if !mapValue.IsValid() {
-								// Se non esiste, crea un nuovo valore per la chiave
+								// If it doesn't exist, create a new value for the key
 								mapValue = reflect.New(fieldValue.Type().Elem()).Elem()
 							}
-							// Imposta il valore nella mappa
+							// Set the value using setBasicValue
 							if err := setBasicValue(mapValue, value); err != nil {
 								return err
 							}
@@ -91,16 +91,17 @@ func setValueFromString(v reflect.Value, key, value string) error {
 			}
 		}
 	case reflect.Map:
-		// Gestisci mappe
+		// Handle maps
 		mapKey := extractMapKey(key)
 		if mapKey != "" {
-			// Assicurati che la mappa sia inizializzata
+			// Ensure the map is initialized
 			if val.IsNil() {
 				val.Set(reflect.MakeMap(val.Type()))
 			}
+			// Create or update the map entry
 			mapValue := val.MapIndex(reflect.ValueOf(mapKey))
 			if !mapValue.IsValid() {
-				// Se non esiste, crea un nuovo valore
+				// If it doesn't exist, create a new value
 				mapValue = reflect.New(val.Type().Elem()).Elem()
 			}
 			if err := setBasicValue(mapValue, value); err != nil {
@@ -115,16 +116,20 @@ func setValueFromString(v reflect.Value, key, value string) error {
 	return nil
 }
 
-// extractMapKey estrae la chiave della mappa
+// extractMapKey extracts the key of the map from the given string
 func extractMapKey(key string) string {
 	parts := strings.SplitN(key, ".", 2)
-	return parts[0] // Ritorna solo la chiave
+	return parts[0] // Return only the key part
 }
 
-// setBasicValue imposta il valore di un campo di base
+// setBasicValue sets the value of a basic field type (string, bool, int, float, etc.)
 func setBasicValue(v reflect.Value, value string) error {
 	if !v.IsValid() {
 		return fmt.Errorf("invalid value provided")
+	}
+	if !v.CanSet() {
+		fmt.Println(v)
+		return fmt.Errorf("cannot set value on provided reflect.Value")
 	}
 	switch v.Kind() {
 	case reflect.String:

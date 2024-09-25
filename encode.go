@@ -12,7 +12,7 @@ type Marshaler interface {
 	MarshalProperties() (string, error)
 }
 
-// Marshal serializza una struct in un formato di file .properties
+// Marshal serializes a struct into a .properties file format
 func Marshal(v interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	err := marshalValue(reflect.ValueOf(v), &buf, "")
@@ -22,7 +22,7 @@ func Marshal(v interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// marshalValue gestisce la serializzazione delle struct, mappe e slice
+// marshalValue handles serialization of structs, maps, and slices
 func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 	val = reflect.Indirect(val)
 	switch val.Kind() {
@@ -46,13 +46,13 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 			}
 			if fieldValue.CanInterface() {
 				if fieldValue.Kind() == reflect.Struct {
-					// Gestisci struct nidificate
+					// Handle nested structs
 					err := marshalValue(fieldValue, buf, fullKey+".")
 					if err != nil {
 						return err
 					}
 				} else if fieldValue.Kind() == reflect.Slice {
-					// Gestisci slice: serializza su una singola riga separata da virgole
+					// Handle slices: serialize on a single line separated by commas
 					elements := make([]string, fieldValue.Len())
 					for i := 0; i < fieldValue.Len(); i++ {
 						elemValue := fieldValue.Index(i)
@@ -62,10 +62,10 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 						}
 						elements[i] = strValue
 					}
-					// Scrivi la slice come una stringa separata da virgole
+					// Write the slice as a comma-separated string
 					buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strings.Join(elements, ",")))
 				} else if fieldValue.Kind() == reflect.Map {
-					// Gestisci mappe
+					// Handle maps
 					for _, key := range fieldValue.MapKeys() {
 						mapValue := fieldValue.MapIndex(key)
 						strValue, err := valueToString(mapValue)
@@ -84,7 +84,7 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 			}
 		}
 	case reflect.Map:
-		// Gestione delle mappe
+		// Handling maps
 		for _, key := range val.MapKeys() {
 			mapValue := val.MapIndex(key)
 			strValue, err := valueToString(mapValue)
@@ -103,14 +103,14 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 	return nil
 }
 
-// valueToString converte i valori in stringhe
+// valueToString converts values into strings
 func valueToString(v reflect.Value) (string, error) {
 	if !v.IsValid() {
 		return "", nil
 	}
 
 	if v.CanInterface() {
-		// Verifica se implementa l'interfaccia Marshaler
+		// Check if it implements the Marshaler interface
 		if m, ok := v.Interface().(Marshaler); ok {
 			return m.MarshalProperties()
 		}
