@@ -11,6 +11,7 @@ type Marshaler interface {
 	MarshalProperties() (string, error)
 }
 
+// Marshal serializza una struct in un formato di file .properties
 func Marshal(v interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	err := marshalValue(reflect.ValueOf(v), &buf, "")
@@ -20,6 +21,7 @@ func Marshal(v interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// marshalValue gestisce la serializzazione delle struct, mappe e slice
 func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 	val = reflect.Indirect(val)
 	switch val.Kind() {
@@ -43,9 +45,30 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 			}
 			if fieldValue.CanInterface() {
 				if fieldValue.Kind() == reflect.Struct {
+					// Gestisci struct nidificate
 					err := marshalValue(fieldValue, buf, fullKey+".")
 					if err != nil {
 						return err
+					}
+				} else if fieldValue.Kind() == reflect.Slice {
+					// Gestisci slice
+					for i := 0; i < fieldValue.Len(); i++ {
+						elemValue := fieldValue.Index(i)
+						strValue, err := valueToString(elemValue)
+						if err != nil {
+							return err
+						}
+						buf.WriteString(fmt.Sprintf("%s[%d]=%s\n", fullKey, i, strValue))
+					}
+				} else if fieldValue.Kind() == reflect.Map {
+					// Gestisci mappe
+					for _, key := range fieldValue.MapKeys() {
+						mapValue := fieldValue.MapIndex(key)
+						strValue, err := valueToString(mapValue)
+						if err != nil {
+							return err
+						}
+						buf.WriteString(fmt.Sprintf("%s.%s=%s\n", fullKey, key, strValue))
 					}
 				} else {
 					strValue, err := valueToString(fieldValue)
@@ -57,29 +80,14 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 			}
 		}
 	case reflect.Map:
+		// Gestione delle mappe
 		for _, key := range val.MapKeys() {
 			mapValue := val.MapIndex(key)
-			strKey, err := valueToString(key)
-			if err != nil {
-				return err
-			}
-			fullKey := prefix + strKey
 			strValue, err := valueToString(mapValue)
 			if err != nil {
 				return err
 			}
-			// Scrivi ogni coppia chiave-valore della mappa su una nuova linea
-			buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
-		}
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < val.Len(); i++ {
-			elemValue := val.Index(i)
-			fullKey := fmt.Sprintf("%s[%d]", prefix[:len(prefix)-1], i)
-			strValue, err := valueToString(elemValue)
-			if err != nil {
-				return err
-			}
-			buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
+			buf.WriteString(fmt.Sprintf("%s=%s\n", key, strValue))
 		}
 	default:
 		strValue, err := valueToString(val)
@@ -91,12 +99,14 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 	return nil
 }
 
+// valueToString converte i valori in stringhe
 func valueToString(v reflect.Value) (string, error) {
 	if !v.IsValid() {
 		return "", nil
 	}
 
 	if v.CanInterface() {
+		// Verifica se implementa l'interfaccia Marshaler
 		if m, ok := v.Interface().(Marshaler); ok {
 			return m.MarshalProperties()
 		}
@@ -113,24 +123,6 @@ func valueToString(v reflect.Value) (string, error) {
 		return strconv.FormatUint(v.Uint(), 10), nil
 	case reflect.Float32, reflect.Float64:
 		return strconv.FormatFloat(v.Float(), 'f', -1, 64), nil
-	case reflect.Complex64, reflect.Complex128:
-		return fmt.Sprint(v.Complex()), nil
-	case reflect.Slice, reflect.Array:
-		var buf bytes.Buffer
-		for i := 0; i < v.Len(); i++ {
-			elemValue := v.Index(i)
-			strValue, err := valueToString(elemValue)
-			if err != nil {
-				return "", err
-			}
-			if i > 0 {
-				buf.WriteString(",")
-			}
-			buf.WriteString(strValue)
-		}
-		return buf.String(), nil
-	case reflect.Map:
-		return "", fmt.Errorf("unsupported type: map must be handled in marshalValue")
 	default:
 		return "", fmt.Errorf("unsupported type: %s", v.Type())
 	}

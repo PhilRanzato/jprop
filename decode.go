@@ -11,23 +11,20 @@ type Unmarshaler interface {
 	UnmarshalProperties(string) error
 }
 
+// Unmarshal carica i dati da un formato .properties in una struct
 func Unmarshal(data []byte, v interface{}) error {
 	lines := strings.Split(string(data), "\n")
+	val := reflect.ValueOf(v).Elem()
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if len(line) == 0 || strings.HasPrefix(line, "#") {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid line: %s", line)
+			continue
 		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		err := setValueFromString(v, key, value)
+		key, value := parts[0], parts[1]
+		err := setValueFromString(val, key, value)
 		if err != nil {
 			return err
 		}
@@ -35,123 +32,121 @@ func Unmarshal(data []byte, v interface{}) error {
 	return nil
 }
 
-func setValueFromString(v interface{}, key, value string) error {
-	structValue := reflect.ValueOf(v).Elem()
-	structType := structValue.Type()
-
-	for i := 0; i < structType.NumField(); i++ {
-		field := structType.Field(i)
-		fieldValue := structValue.Field(i)
-
-		tag := field.Tag.Get("jprop")
-		tagOptions := parseTagOptions(tag)
-		propName := tagOptions.name
-		if propName == "" {
-			propName = field.Name
-		}
-
-		// Verifica se la chiave corrisponde al campo corrente
-		if strings.HasPrefix(key, propName) {
-			switch fieldValue.Kind() {
-			case reflect.String:
-				fieldValue.SetString(value)
-			case reflect.Bool:
-				boolValue, err := strconv.ParseBool(value)
-				if err != nil {
-					return fmt.Errorf("invalid boolean value for key %s: %s", key, value)
-				}
-				fieldValue.SetBool(boolValue)
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				intValue, err := strconv.ParseInt(value, 10, 64)
-				if err != nil {
-					return fmt.Errorf("invalid integer value for key %s: %s", key, value)
-				}
-				fieldValue.SetInt(intValue)
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				uintValue, err := strconv.ParseUint(value, 10, 64)
-				if err != nil {
-					return fmt.Errorf("invalid unsigned integer value for key %s: %s", key, value)
-				}
-				fieldValue.SetUint(uintValue)
-			case reflect.Float32, reflect.Float64:
-				floatValue, err := strconv.ParseFloat(value, 64)
-				if err != nil {
-					return fmt.Errorf("invalid float value for key %s: %s", key, value)
-				}
-				fieldValue.SetFloat(floatValue)
-			case reflect.Slice:
-				elemType := fieldValue.Type().Elem()
-				values := strings.Split(value, ",")
-				slice := reflect.MakeSlice(fieldValue.Type(), len(values), len(values))
-				for i, v := range values {
-					elemValue := reflect.New(elemType).Elem()
-					if err := setBasicTypeFromString(v, elemValue); err != nil {
-						return err
+// setValueFromString gestisce la deserializzazione
+func setValueFromString(v reflect.Value, key, value string) error {
+	val := reflect.Indirect(v)
+	switch val.Kind() {
+	case reflect.Struct:
+		typ := val.Type()
+		for i := 0; i < val.NumField(); i++ {
+			field := typ.Field(i)
+			fieldValue := val.Field(i)
+			tag := field.Tag.Get("jprop")
+			tagOptions := parseTagOptions(tag)
+			fieldKey := tagOptions.name
+			if fieldKey == "" {
+				fieldKey = field.Name
+			}
+			if strings.HasPrefix(key, fieldKey) {
+				subKey := strings.TrimPrefix(key, fieldKey)
+				if subKey == "" || subKey[0] == '.' {
+					subKey = strings.TrimPrefix(subKey, ".")
+					if fieldValue.Kind() == reflect.Struct {
+						return setValueFromString(fieldValue, subKey, value)
+					} else if fieldValue.Kind() == reflect.Slice {
+						// Gestisci slice
+						items := strings.Split(value, ",")
+						slice := reflect.MakeSlice(fieldValue.Type(), len(items), len(items))
+						for idx, item := range items {
+							if err := setBasicValue(slice.Index(idx), strings.TrimSpace(item)); err != nil {
+								return err
+							}
+						}
+						fieldValue.Set(slice)
+						return nil
+					} else if fieldValue.Kind() == reflect.Map {
+						// Gestisci mappe
+						mapKey := extractMapKey(subKey) // Prendi solo la chiave
+						if mapKey != "" {
+							// Assicurati che la mappa sia inizializzata
+							if fieldValue.IsNil() {
+								fieldValue.Set(reflect.MakeMap(fieldValue.Type()))
+							}
+							// Creare o aggiornare la chiave nella mappa
+							mapValue := fieldValue.MapIndex(reflect.ValueOf(mapKey))
+							if !mapValue.IsValid() {
+								// Se non esiste, crea un nuovo valore per la chiave
+								mapValue = reflect.New(fieldValue.Type().Elem()).Elem()
+							}
+							// Imposta il valore nella mappa
+							if err := setBasicValue(mapValue, value); err != nil {
+								return err
+							}
+							fieldValue.SetMapIndex(reflect.ValueOf(mapKey), mapValue)
+							return nil
+						}
 					}
-					slice.Index(i).Set(elemValue)
+					return setValueFromString(fieldValue, subKey, value)
 				}
-				fieldValue.Set(slice)
-			case reflect.Map:
-				if fieldValue.Type().Key().Kind() != reflect.String {
-					return fmt.Errorf("unsupported map key type for key %s: %s", key, fieldValue.Type().Key())
-				}
-				if fieldValue.IsNil() {
-					fieldValue.Set(reflect.MakeMap(fieldValue.Type()))
-				}
-
-				mapKeyValue := strings.SplitN(key, ".", 2)
-				if len(mapKeyValue) < 2 {
-					return fmt.Errorf("invalid map key format for key %s", key)
-				}
-				mapKey := mapKeyValue[1]
-
-				mapKeyElem := reflect.New(fieldValue.Type().Key()).Elem()
-				if err := setBasicTypeFromString(mapKey, mapKeyElem); err != nil {
-					return err
-				}
-
-				mapValueElem := reflect.New(fieldValue.Type().Elem()).Elem()
-				if err := setBasicTypeFromString(value, mapValueElem); err != nil {
-					return err
-				}
-				fieldValue.SetMapIndex(mapKeyElem, mapValueElem)
-			default:
-				return fmt.Errorf("unsupported field type: %s", fieldValue.Type())
 			}
 		}
+	case reflect.Map:
+		// Gestisci mappe
+		mapKey := extractMapKey(key)
+		if mapKey != "" {
+			// Assicurati che la mappa sia inizializzata
+			if val.IsNil() {
+				val.Set(reflect.MakeMap(val.Type()))
+			}
+			mapValue := val.MapIndex(reflect.ValueOf(mapKey))
+			if !mapValue.IsValid() {
+				// Se non esiste, crea un nuovo valore
+				mapValue = reflect.New(val.Type().Elem()).Elem()
+			}
+			if err := setBasicValue(mapValue, value); err != nil {
+				return err
+			}
+			val.SetMapIndex(reflect.ValueOf(mapKey), mapValue)
+			return nil
+		}
+	default:
+		return setBasicValue(val, value)
 	}
-
 	return nil
 }
 
-func setBasicTypeFromString(value string, v reflect.Value) error {
+// extractMapKey estrae la chiave della mappa
+func extractMapKey(key string) string {
+	parts := strings.SplitN(key, ".", 2)
+	return parts[0] // Ritorna solo la chiave
+}
+
+// setBasicValue imposta il valore di un campo di base
+func setBasicValue(v reflect.Value, value string) error {
+	if !v.IsValid() {
+		return fmt.Errorf("invalid value provided")
+	}
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(value)
 	case reflect.Bool:
-		boolValue, err := strconv.ParseBool(value)
+		boolVal, err := strconv.ParseBool(value)
 		if err != nil {
 			return err
 		}
-		v.SetBool(boolValue)
+		v.SetBool(boolVal)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		intValue, err := strconv.ParseInt(value, 10, 64)
+		intVal, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return err
 		}
-		v.SetInt(intValue)
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		uintValue, err := strconv.ParseUint(value, 10, 64)
-		if err != nil {
-			return err
-		}
-		v.SetUint(uintValue)
+		v.SetInt(intVal)
 	case reflect.Float32, reflect.Float64:
-		floatValue, err := strconv.ParseFloat(value, 64)
+		floatVal, err := strconv.ParseFloat(value, 64)
 		if err != nil {
 			return err
 		}
-		v.SetFloat(floatValue)
+		v.SetFloat(floatVal)
 	default:
 		return fmt.Errorf("unsupported type: %s", v.Type())
 	}
