@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestStruct is used for unmarshalling tests
-type TestStruct struct {
+// testStruct is used for unmarshalling tests
+type testStruct struct {
 	Name   string            `jprop:"name"`
 	Age    int               `jprop:"age"`
 	Active bool              `jprop:"active"`
@@ -31,9 +31,9 @@ func TestUnmarshal(t *testing.T) {
 				data: []byte(`name=John Doe
 age=30
 active=true`),
-				v: &TestStruct{},
+				v: &testStruct{},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Name:   "John Doe",
 				Age:    30,
 				Active: true,
@@ -45,9 +45,9 @@ active=true`),
 			args: args{
 				data: []byte(`name=John Doe
 tags=go,programming,testing`),
-				v: &TestStruct{},
+				v: &testStruct{},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Name: "John Doe",
 				Tags: []string{"go", "programming", "testing"},
 			},
@@ -59,9 +59,9 @@ tags=go,programming,testing`),
 				data: []byte(`name=John Doe
 props.language=go
 props.editor=vscode`),
-				v: &TestStruct{},
+				v: &testStruct{},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Name: "John Doe",
 				Props: map[string]string{
 					"language": "go",
@@ -74,9 +74,9 @@ props.editor=vscode`),
 			name: "Map with empty key",
 			args: args{
 				data: []byte(`props.=emptyValue`), // Test for empty map key handling
-				v:    &TestStruct{Props: make(map[string]string)},
+				v:    &testStruct{Props: make(map[string]string)},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Props: map[string]string{
 					"": "emptyValue", // Key is empty, should store as such
 				},
@@ -87,18 +87,18 @@ props.editor=vscode`),
 			name: "Invalid integer",
 			args: args{
 				data: []byte(`age=invalid`),
-				v:    &TestStruct{},
+				v:    &testStruct{},
 			},
-			want:    &TestStruct{},
+			want:    &testStruct{},
 			wantErr: true,
 		},
 		{
 			name: "Invalid boolean",
 			args: args{
 				data: []byte(`active=notabool`),
-				v:    &TestStruct{},
+				v:    &testStruct{},
 			},
-			want:    &TestStruct{},
+			want:    &testStruct{},
 			wantErr: true,
 		},
 		{
@@ -106,9 +106,9 @@ props.editor=vscode`),
 			args: args{
 				data: []byte(`name=
 tags=`),
-				v: &TestStruct{},
+				v: &testStruct{},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Name: "",
 				Tags: []string{""}, // Expected empty tag as per input
 			},
@@ -118,9 +118,9 @@ tags=`),
 			name: "Empty input data",
 			args: args{
 				data: []byte(``),
-				v:    &TestStruct{},
+				v:    &testStruct{},
 			},
-			want:    &TestStruct{},
+			want:    &testStruct{},
 			wantErr: false,
 		},
 		{
@@ -131,9 +131,9 @@ tags=`),
 				# Another comment
 				age=25
 				active=true`),
-				v: &TestStruct{},
+				v: &testStruct{},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Name:   "John Doe",
 				Age:    25,
 				Active: true,
@@ -144,11 +144,11 @@ tags=`),
 			name: "Nested struct with missing subKey",
 			args: args{
 				data: []byte(`props.key=value`),
-				v: &TestStruct{
+				v: &testStruct{
 					Props: nil,
 				},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Props: map[string]string{
 					"key": "value",
 				},
@@ -159,9 +159,9 @@ tags=`),
 			name: "Invalid slice structure",
 			args: args{
 				data: []byte(`tags=invalid,slice`),
-				v:    &TestStruct{},
+				v:    &testStruct{},
 			},
-			want: &TestStruct{
+			want: &testStruct{
 				Tags: []string{"invalid", "slice"},
 			},
 			wantErr: false,
@@ -170,9 +170,9 @@ tags=`),
 			name: "Non-existent field in struct",
 			args: args{
 				data: []byte(`nonexistent=field`),
-				v:    &TestStruct{},
+				v:    &testStruct{},
 			},
-			want:    &TestStruct{},
+			want:    &testStruct{},
 			wantErr: false,
 		},
 	}
