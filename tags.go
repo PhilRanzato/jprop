@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+const (
+	omitEmptyKey = "omitempty"
+)
+
 type tagOptions struct {
 	name      string
 	omitEmpty bool
@@ -18,7 +22,7 @@ func parseTagOptions(tag string) tagOptions {
 	parts := strings.Split(tag, ",")
 	opts.name = parts[0]
 	for _, opt := range parts[1:] {
-		if opt == "omitempty" {
+		if opt == omitEmptyKey {
 			opts.omitEmpty = true
 		}
 	}

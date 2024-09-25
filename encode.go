@@ -60,35 +60,21 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 				return err
 			}
 			fullKey := prefix + strKey
-			if mapValue.Kind() == reflect.Struct || mapValue.Kind() == reflect.Map {
-				err := marshalValue(mapValue, buf, fullKey+".")
-				if err != nil {
-					return err
-				}
-			} else {
-				strValue, err := valueToString(mapValue)
-				if err != nil {
-					return err
-				}
-				buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
+			strValue, err := valueToString(mapValue)
+			if err != nil {
+				return err
 			}
+			buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < val.Len(); i++ {
 			elemValue := val.Index(i)
 			fullKey := fmt.Sprintf("%s[%d]", prefix[:len(prefix)-1], i)
-			if elemValue.Kind() == reflect.Struct || elemValue.Kind() == reflect.Map {
-				err := marshalValue(elemValue, buf, fullKey+".")
-				if err != nil {
-					return err
-				}
-			} else {
-				strValue, err := valueToString(elemValue)
-				if err != nil {
-					return err
-				}
-				buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
+			strValue, err := valueToString(elemValue)
+			if err != nil {
+				return err
 			}
+			buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
 		}
 	default:
 		strValue, err := valueToString(val)
@@ -124,6 +110,37 @@ func valueToString(v reflect.Value) (string, error) {
 		return strconv.FormatFloat(v.Float(), 'f', -1, 64), nil
 	case reflect.Complex64, reflect.Complex128:
 		return fmt.Sprint(v.Complex()), nil
+	case reflect.Slice, reflect.Array:
+		var buf bytes.Buffer
+		for i := 0; i < v.Len(); i++ {
+			elemValue := v.Index(i)
+			strValue, err := valueToString(elemValue)
+			if err != nil {
+				return "", err
+			}
+			if i > 0 {
+				buf.WriteString(",")
+			}
+			buf.WriteString(strValue)
+		}
+		return buf.String(), nil
+	case reflect.Map:
+		var buf bytes.Buffer
+		for _, key := range v.MapKeys() {
+			strKey, err := valueToString(key)
+			if err != nil {
+				return "", err
+			}
+			strValue, err := valueToString(v.MapIndex(key))
+			if err != nil {
+				return "", err
+			}
+			if buf.Len() > 0 {
+				buf.WriteString(", ")
+			}
+			buf.WriteString(fmt.Sprintf("%s=%s", strKey, strValue))
+		}
+		return buf.String(), nil
 	default:
 		return "", fmt.Errorf("unsupported type: %s", v.Type())
 	}
