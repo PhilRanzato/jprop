@@ -68,6 +68,7 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 			if err != nil {
 				return err
 			}
+			// Scrivi ogni coppia chiave-valore della mappa su una nuova linea
 			buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strValue))
 		}
 	case reflect.Slice, reflect.Array:
@@ -129,22 +130,7 @@ func valueToString(v reflect.Value) (string, error) {
 		}
 		return buf.String(), nil
 	case reflect.Map:
-		var buf bytes.Buffer
-		for _, key := range v.MapKeys() {
-			strKey, err := valueToString(key)
-			if err != nil {
-				return "", err
-			}
-			strValue, err := valueToString(v.MapIndex(key))
-			if err != nil {
-				return "", err
-			}
-			if buf.Len() > 0 {
-				buf.WriteString(", ")
-			}
-			buf.WriteString(fmt.Sprintf("%s=%s", strKey, strValue))
-		}
-		return buf.String(), nil
+		return "", fmt.Errorf("unsupported type: map must be handled in marshalValue")
 	default:
 		return "", fmt.Errorf("unsupported type: %s", v.Type())
 	}
