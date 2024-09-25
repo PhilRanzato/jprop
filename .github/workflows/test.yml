@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.23"
+
+      - name: Install tool to convert test output in xml
+        run: |
+          export GOPATH="$HOME/go/"
+          export PATH=$PATH:$GOPATH/bin
+          go install github.com/jstemmer/go-junit-report@latest
+
+      - name: Test
+        run: make test | go-junit-report -set-exit-code > test-report.xml
+
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "test-report.xml"
+        if: always()
