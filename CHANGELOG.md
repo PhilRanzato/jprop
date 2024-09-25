@@ -8,8 +8,9 @@ All notable changes to [jprop](https://github.com/PhilRanzato/jprop) will be doc
 
 ### Added
 
+- #4: Added testing ci.
 - #3: Implemented support for maps and slices.
-- #1: Added initial code.
+- #1: Added initial code implementation.
 
 ### Changed
 

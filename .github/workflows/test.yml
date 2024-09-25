@@ -24,7 +24,7 @@ jobs:
           go install github.com/jstemmer/go-junit-report@latest
 
       - name: Test
-        run: make test | go-junit-report -set-exit-code > test-report.xml
+        run: go test -v ./... | go-junit-report -set-exit-code > test-report.xml
 
       - name: Test Summary
         uses: test-summary/action@v2
