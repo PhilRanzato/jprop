@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 )
 
 type Marshaler interface {
@@ -51,15 +52,18 @@ func marshalValue(val reflect.Value, buf *bytes.Buffer, prefix string) error {
 						return err
 					}
 				} else if fieldValue.Kind() == reflect.Slice {
-					// Gestisci slice
+					// Gestisci slice: serializza su una singola riga separata da virgole
+					elements := make([]string, fieldValue.Len())
 					for i := 0; i < fieldValue.Len(); i++ {
 						elemValue := fieldValue.Index(i)
 						strValue, err := valueToString(elemValue)
 						if err != nil {
 							return err
 						}
-						buf.WriteString(fmt.Sprintf("%s[%d]=%s\n", fullKey, i, strValue))
+						elements[i] = strValue
 					}
+					// Scrivi la slice come una stringa separata da virgole
+					buf.WriteString(fmt.Sprintf("%s=%s\n", fullKey, strings.Join(elements, ",")))
 				} else if fieldValue.Kind() == reflect.Map {
 					// Gestisci mappe
 					for _, key := range fieldValue.MapKeys() {
